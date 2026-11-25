@@ -26,7 +26,9 @@ export class EmailService {
     if (!this.ses) {
       this.outbox.push(msg);
       if (this.outbox.length > 50) this.outbox.shift();
-      this.logger.log(`[email:log] to=*@${msg.to.split('@')[1]} subject="${msg.subject}"`);
+      // Codes are printed only in local development, never in staging or production (those use SES).
+      const detail = this.env.NODE_ENV === 'development' ? ` text="${msg.text.replace(/\s+/g, ' ').slice(0, 200)}"` : '';
+      this.logger.log(`[email:log] to=*@${msg.to.split('@')[1]} subject="${msg.subject}"${detail}`);
       return;
     }
     await this.ses.send(

@@ -1,5 +1,7 @@
 # Ugo: Project Plan
 
+> This was the first planning note. The build now follows the full Ugo brief: see [STATUS.md](STATUS.md) for where things stand and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built. The backend choice below was settled as NestJS with PostgreSQL on AWS.
+
 Ugo is an exam prep and study hub mobile app for school kids and students. It will be built with Expo and React Native so that one codebase runs on Android and iOS.
 
 This plan sets out what we are building, how we will build it and the order in which the work will be done. It is a living document and should be updated as decisions change.

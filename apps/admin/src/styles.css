@@ -1,0 +1,27 @@
+:root { --blue: #0b2a6f; --blue2: #1a44a8; --green: #16834a; --gold: #f2b705; --red: #c62828; --bg: #f4f7fd; --border: #d5ddee; --text: #0e1630; --muted: #4a5675; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--text); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); }
+.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+nav { background: var(--blue); color: white; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+nav h1 { font-size: 20px; margin: 0 0 16px; }
+nav button { background: transparent; color: #dfe7ff; border: 0; text-align: left; padding: 10px 12px; border-radius: 8px; font-size: 15px; cursor: pointer; }
+nav button.active, nav button:hover { background: rgba(255, 255, 255, 0.14); color: white; }
+main { padding: 24px; display: flex; flex-direction: column; gap: 16px; overflow-x: auto; }
+.card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
+input, select, textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; min-width: 160px; }
+textarea { min-height: 90px; }
+button.btn { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--blue); background: var(--blue); color: white; cursor: pointer; }
+button.btn.secondary { background: white; color: var(--blue); }
+button.btn.danger { background: var(--red); border-color: var(--red); }
+button.btn:disabled { opacity: 0.5; cursor: default; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e6edfb; color: var(--blue); font-size: 12px; font-weight: 700; }
+.error { color: var(--red); white-space: pre-wrap; }
+.ok { color: var(--green); }
+.muted { color: var(--muted); }
+code, pre { font-family: ui-monospace, monospace; font-size: 12px; }
+pre { background: var(--bg); padding: 8px; border-radius: 8px; max-height: 240px; overflow: auto; }

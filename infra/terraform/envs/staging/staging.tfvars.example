@@ -1,0 +1,8 @@
+api_certificate_arn               = "arn:aws:acm:af-south-1:ACCOUNT_ID:certificate/REPLACE"
+cloudfront_signing_public_key_pem = <<PEM
+-----BEGIN PUBLIC KEY-----
+REPLACE
+-----END PUBLIC KEY-----
+PEM
+admin_allowed_cidrs = ["203.0.113.10/32"]
+alert_email         = "alerts@ugo.ng"

@@ -1,0 +1,36 @@
+# Store builds with EAS Build and submission with EAS Submit. Run manually for each monthly release.
+# Over the air updates (bug fixes only) use the "update" job; see docs/MAINTENANCE_PLAN.md for the rules.
+name: Mobile release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [build-staging, build-and-submit-production, ota-bugfix-production]
+      message:
+        description: Release note or OTA description
+        required: true
+
+jobs:
+  eas:
+    runs-on: ubuntu-latest
+    environment: ${{ startsWith(inputs.action, 'build-staging') && 'staging' || 'production' }}
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: npm ci
+      - if: inputs.action == 'build-staging'
+        run: eas build --profile staging --platform all --non-interactive --no-wait
+      - if: inputs.action == 'build-and-submit-production'
+        run: eas build --profile production --platform all --non-interactive --auto-submit --no-wait
+      - if: inputs.action == 'ota-bugfix-production'
+        run: eas update --channel production --message "${{ inputs.message }}" --non-interactive

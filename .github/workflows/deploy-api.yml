@@ -1,0 +1,56 @@
+# Builds the API image, pushes it to ECR, runs database migrations, then rolls out on ECS.
+# Staging deploys on every push to main; production needs a manual run with approval
+# (GitHub environment "production" with required reviewers).
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/api/**', 'packages/shared/**']
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    env:
+      ENV: ${{ inputs.environment || 'staging' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push (ARM64)
+        run: |
+          docker buildx create --use
+          docker buildx build --platform linux/arm64 -f apps/api/Dockerfile -t ${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }} --push .
+      - name: Run migrations as a one off task
+        run: |
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition ugo-$ENV-api --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs run-task --cluster ugo-$ENV --task-definition $TASK_DEF --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNETS }}],securityGroups=[${{ vars.API_SECURITY_GROUP }}]}" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["npx","prisma","migrate","deploy"]}]}' \
+            --query 'tasks[0].taskArn' --output text > task.txt
+          aws ecs wait tasks-stopped --cluster ugo-$ENV --tasks $(cat task.txt)
+          CODE=$(aws ecs describe-tasks --cluster ugo-$ENV --tasks $(cat task.txt) --query 'tasks[0].containers[0].exitCode' --output text)
+          test "$CODE" = "0"
+      - name: Roll out new image
+        run: |
+          aws ecs describe-task-definition --task-definition ugo-$ENV-api --query taskDefinition > td.json
+          jq --arg IMG "${{ vars.ECR_REPOSITORY_URL }}:${{ github.sha }}" '.containerDefinitions[0].image=$IMG | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)' td.json > td-new.json
+          NEW=$(aws ecs register-task-definition --cli-input-json file://td-new.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster ugo-$ENV --service api --task-definition $NEW
+          aws ecs wait services-stable --cluster ugo-$ENV --services api

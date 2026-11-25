@@ -184,6 +184,14 @@ export class AdminController {
     await this.prisma.user.updateMany({ where: { id, status: 'SUSPENDED' }, data: { status: 'ACTIVE' } });
   }
 
+  /** Ends a plan straight away (for example after a Flutterwave refund or a confirmed fraud case). */
+  @Roles('ADMIN')
+  @Post('entitlements/:id/revoke')
+  @HttpCode(204)
+  async revoke(@Param('id', ParseUUIDPipe) id: string, @Body({ schema: z.object({ reason: z.string().min(3).max(500) }).strict() }) _body: { reason: string }) {
+    await this.prisma.entitlement.update({ where: { id }, data: { status: 'REVOKED', autoRenew: false, lastEventAt: new Date() } });
+  }
+
   @Roles('ADMIN')
   @Post('staff')
   async createStaff(@Body({ schema: staffCreate }) body: z.infer<typeof staffCreate>) {

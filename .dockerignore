@@ -1,0 +1,12 @@
+node_modules
+dist
+storage
+storage-test
+.env
+**/node_modules
+**/dist
+apps/mobile
+apps/admin
+infra
+docs
+.git

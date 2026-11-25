@@ -22,7 +22,7 @@ export class StorageService {
 
   async put(key: string, body: Buffer, contentType: string): Promise<void> {
     if (this.s3) {
-      await this.s3.send(new PutObjectCommand({ Bucket: this.env.S3_BUCKET, Key: key, Body: body, ContentType: contentType, ServerSideEncryption: 'aws:kms', CacheControl: 'private, max-age=31536000, immutable' }));
+      await this.s3.send(new PutObjectCommand({ Bucket: this.env.S3_BUCKET, Key: key, Body: body, ContentType: contentType, CacheControl: 'private, max-age=31536000, immutable' }));
       return;
     }
     const path = this.localPath(key);

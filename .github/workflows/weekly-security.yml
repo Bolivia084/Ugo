@@ -1,0 +1,33 @@
+# Weekly dependency and container scans (in addition to Dependabot), as the security plan requires.
+name: Weekly security scan
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: trivy.sarif }
+      - name: Build API image and scan it
+        run: docker build -f apps/api/Dockerfile -t ugo-api:scan .
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ugo-api:scan
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true

@@ -1,0 +1,6 @@
+# Copy to backend.hcl. The state bucket and lock table are created once by hand (see docs/DEPLOYMENT.md).
+bucket         = "ugo-terraform-state-ACCOUNT_ID"
+key            = "staging/terraform.tfstate"
+region         = "af-south-1"
+encrypt        = true
+use_lockfile   = true
