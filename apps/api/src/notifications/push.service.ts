@@ -5,8 +5,9 @@ import type { Env } from '../config/env.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 /**
- * Push notifications through Firebase Cloud Messaging (HTTP v1). FCM delivers to
- * Android directly and to iOS through APNs, using the APNs key uploaded to Firebase.
+ * Push notifications. The app registers Expo push tokens: the Expo push service delivers
+ * them through FCM (Android) and APNs (iOS) with Ugo's own credentials uploaded to EAS.
+ * Raw FCM registration tokens are also supported (Firebase Cloud Messaging HTTP v1).
  */
 @Injectable()
 export class PushService {
@@ -29,13 +30,16 @@ export class PushService {
   }
 
   async sendToUser(userId: string, title: string, body: string, data: Record<string, string> = {}): Promise<number> {
-    const devices = await this.prisma.deviceToken.findMany({ where: { userId } });
+    const all = await this.prisma.deviceToken.findMany({ where: { userId } });
+    const expo = all.filter((d) => d.token.startsWith('ExponentPushToken['));
+    const devices = all.filter((d) => !d.token.startsWith('ExponentPushToken['));
+    let sent = expo.length ? await this.sendExpo(expo.map((d) => d.token), title, body, data) : 0;
+    if (!devices.length) return sent;
     if (!this.auth) {
       this.logger.log(`[push:log] user=${userId} devices=${devices.length} title="${title}"`);
       return devices.length;
     }
     const client = await this.auth.getClient();
-    let sent = 0;
     for (const d of devices) {
       try {
         await client.request({
@@ -51,5 +55,24 @@ export class PushService {
       }
     }
     return sent;
+  }
+
+  private async sendExpo(tokens: string[], title: string, body: string, data: Record<string, string>): Promise<number> {
+    if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+      this.logger.log(`[push:expo:log] devices=${tokens.length} title="${title}"`);
+      return tokens.length;
+    }
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(tokens.map((to) => ({ to, title, body, data, sound: null }))),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const json = (await res.json().catch(() => ({}))) as { data?: { status: string; details?: { error?: string } }[] };
+    const results = json.data ?? [];
+    for (const [i, r] of results.entries()) {
+      if (r.details?.error === 'DeviceNotRegistered') await this.prisma.deviceToken.delete({ where: { token: tokens[i] } }).catch(() => undefined);
+    }
+    return results.filter((r) => r.status === 'ok').length;
   }
 }
