@@ -1,0 +1,469 @@
+// Ugo database schema. PostgreSQL 16, encrypted at rest (AWS RDS with KMS, AES-256).
+// Money is stored in kobo (integer). Times are stored in UTC.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  LEARNER
+  PARENT
+  TUTOR
+  CONTENT_STAFF
+  SUPPORT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING_CONSENT
+  SUSPENDED
+  DELETED
+}
+
+enum MfaMethod {
+  EMAIL_OTP
+  SMS_OTP
+  TOTP
+}
+
+enum OtpPurpose {
+  LOGIN_MFA
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+enum ExamCode {
+  FSLC
+  COMMON_ENTRANCE
+  BECE
+  WAEC
+  NECO
+  JAMB
+  SAT
+  IELTS
+}
+
+enum ExamLevel {
+  PRIMARY
+  JUNIOR_SECONDARY
+  SENIOR_SECONDARY
+  SENIOR_SECONDARY_AND_ABOVE
+}
+
+enum ContentKind {
+  QUESTION
+  NOTE
+  FLASHCARD_DECK
+  VIDEO
+}
+
+enum ContentStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ContentSource {
+  ORIGINAL
+  LICENSED
+}
+
+enum PackStatus {
+  PUBLISHED
+  ROLLED_BACK
+}
+
+enum AttemptMode {
+  PRACTICE
+  MOCK
+  SAMPLE_MOCK
+}
+
+enum PurchaseSource {
+  APPLE
+  GOOGLE
+  PAYSTACK
+  FLUTTERWAVE
+  PROMO
+}
+
+enum EntitlementStatus {
+  ACTIVE
+  GRACE_PERIOD
+  BILLING_RETRY
+  CANCELLED
+  EXPIRED
+  REFUNDED
+  REVOKED
+}
+
+enum ParentLinkStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum Platform {
+  IOS
+  ANDROID
+  WEB
+}
+
+model User {
+  id                      String     @id @default(uuid()) @db.Uuid
+  email                   String     @unique
+  phone                   String?
+  passwordHash            String
+  role                    Role       @default(LEARNER)
+  status                  UserStatus @default(ACTIVE)
+  fullName                String
+  displayName             String
+  dateOfBirth             DateTime?  @db.Date
+  emailVerifiedAt         DateTime?
+  mfaEnabled              Boolean    @default(true)
+  mfaMethod               MfaMethod  @default(EMAIL_OTP)
+  totpSecretEnc           String?
+  leaderboardOptIn        Boolean    @default(false)
+  parentAllowsLeaderboard Boolean    @default(false)
+  failedLoginCount        Int        @default(0)
+  lockedUntil             DateTime?
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+  deletedAt               DateTime?
+
+  refreshTokens   RefreshToken[]
+  otps            OtpChallenge[]
+  attempts        Attempt[]
+  entitlements    Entitlement[]
+  childLinks      ParentLink[]      @relation("parent")
+  parentLinks     ParentLink[]      @relation("child")
+  devices         DeviceToken[]
+  tutorUsage      TutorUsage[]
+  customCards     CustomFlashcard[]
+  bookmarks       Bookmark[]
+  consentRequests ConsentRequest[]
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  familyId  String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  userAgent String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@index([userId])
+}
+
+model OtpChallenge {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @db.Uuid
+  purpose    OtpPurpose
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+}
+
+/// Links a parent or guardian to a learner. Verified consent is recorded here.
+model ParentLink {
+  id             String           @id @default(uuid()) @db.Uuid
+  parentId       String           @db.Uuid
+  childId        String           @db.Uuid
+  status         ParentLinkStatus @default(PENDING)
+  consentGivenAt DateTime?
+  consentMethod  String?
+  consentVersion String?
+  createdAt      DateTime         @default(now())
+  parent         User             @relation("parent", fields: [parentId], references: [id], onDelete: Cascade)
+  child          User             @relation("child", fields: [childId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, childId])
+}
+
+/// A learner under 18 who signed up alone asks a parent to approve. The parent receives a one time code by email.
+model ConsentRequest {
+  id          String    @id @default(uuid()) @db.Uuid
+  childId     String    @db.Uuid
+  parentEmail String
+  codeHash    String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  child       User      @relation(fields: [childId], references: [id], onDelete: Cascade)
+
+  @@index([parentEmail])
+}
+
+model ExamCategory {
+  id                String    @id @default(uuid()) @db.Uuid
+  code              ExamCode  @unique
+  name              String
+  level             ExamLevel
+  description       String
+  minAge            Int
+  /// Current annual price in kobo, set by admins. Never hardcoded in the app.
+  priceKobo         Int
+  /// A price change waits for the notice period each store requires before it applies to renewals.
+  pendingPriceKobo  Int?
+  pendingPriceFrom  DateTime?
+  isActive          Boolean   @default(true)
+  sortOrder         Int       @default(0)
+  disclaimer        String?
+  electiveCount     Int?
+  mockMinutes       Int
+  mockSections      Json
+  tutorDailyLimit   Int       @default(40)
+  appleProductId    String?
+  googleProductId   String?
+  paystackPlanCode  String?
+  flutterwavePlanId String?
+  updatedAt         DateTime  @updatedAt
+
+  subjects Subject[]
+  content  ContentItem[]
+  packs    ContentPack[]
+}
+
+model Subject {
+  id             String        @id @default(uuid()) @db.Uuid
+  examCategoryId String        @db.Uuid
+  name           String
+  slug           String
+  isActive       Boolean       @default(true)
+  sortOrder      Int           @default(0)
+  examCategory   ExamCategory  @relation(fields: [examCategoryId], references: [id], onDelete: Cascade)
+  topics         Topic[]
+  content        ContentItem[]
+
+  @@unique([examCategoryId, slug])
+}
+
+model Topic {
+  id        String        @id @default(uuid()) @db.Uuid
+  subjectId String        @db.Uuid
+  name      String
+  sortOrder Int           @default(0)
+  subject   Subject       @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  content   ContentItem[]
+
+  @@unique([subjectId, name])
+}
+
+/// Questions, notes, flashcard decks and videos share one review workflow:
+/// DRAFT -> IN_REVIEW (subject expert) -> APPROVED -> SCHEDULED -> PUBLISHED (in a versioned pack).
+model ContentItem {
+  id              String          @id @default(uuid()) @db.Uuid
+  kind            ContentKind
+  examCategoryId  String          @db.Uuid
+  subjectId       String          @db.Uuid
+  topicId         String?         @db.Uuid
+  title           String
+  /// Shape depends on kind; validated by the API (see content.schemas.ts).
+  payload         Json
+  year            Int?
+  isSample        Boolean         @default(false)
+  status          ContentStatus   @default(DRAFT)
+  source          ContentSource   @default(ORIGINAL)
+  /// Licence reference or permission letter for licensed content. Required when source is LICENSED.
+  rightsNote      String?
+  createdById     String          @db.Uuid
+  reviewedById    String?         @db.Uuid
+  approvedById    String?         @db.Uuid
+  scheduledFor    DateTime?
+  publishedInPack Int?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  examCategory    ExamCategory    @relation(fields: [examCategoryId], references: [id])
+  subject         Subject         @relation(fields: [subjectId], references: [id])
+  topic           Topic?          @relation(fields: [topicId], references: [id])
+  reviews         ContentReview[]
+
+  @@index([examCategoryId, status])
+}
+
+model ContentReview {
+  id         String      @id @default(uuid()) @db.Uuid
+  itemId     String      @db.Uuid
+  reviewerId String      @db.Uuid
+  approved   Boolean
+  comment    String?
+  createdAt  DateTime    @default(now())
+  item       ContentItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+/// A versioned bundle of published content for one exam. Sample packs are free; full packs need a plan.
+model ContentPack {
+  id             String       @id @default(uuid()) @db.Uuid
+  examCategoryId String       @db.Uuid
+  version        Int
+  isSampleOnly   Boolean
+  status         PackStatus   @default(PUBLISHED)
+  whatsNew       String
+  storageKey     String
+  sha256         String
+  sizeBytes      Int
+  itemCount      Int
+  publishedById  String
+  publishedAt    DateTime     @default(now())
+  rolledBackAt   DateTime?
+  examCategory   ExamCategory @relation(fields: [examCategoryId], references: [id])
+
+  @@unique([examCategoryId, isSampleOnly, version])
+}
+
+model Attempt {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @db.Uuid
+  /// Generated on the device. Makes offline sync idempotent: the same attempt is never stored twice.
+  clientId     String
+  examCode     ExamCode
+  subjectId    String?     @db.Uuid
+  mode         AttemptMode
+  startedAt    DateTime
+  finishedAt   DateTime
+  score        Int
+  markable     Int
+  percentage   Float
+  totalTimeMs  Int
+  answers      Json
+  topicResults Json
+  createdAt    DateTime    @default(now())
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([userId, finishedAt])
+  @@index([examCode, finishedAt])
+}
+
+model CustomFlashcard {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  clientId  String
+  deckName  String
+  front     String
+  back      String
+  updatedAt DateTime
+  deletedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+}
+
+model Bookmark {
+  userId    String   @db.Uuid
+  itemId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+}
+
+/// One row per plan a user holds. A user can hold several active plans at once.
+model Entitlement {
+  id              String            @id @default(uuid()) @db.Uuid
+  userId          String            @db.Uuid
+  examCode        ExamCode
+  source          PurchaseSource
+  status          EntitlementStatus
+  startsAt        DateTime
+  expiresAt       DateTime
+  autoRenew       Boolean           @default(true)
+  /// Apple originalTransactionId, Google purchaseToken, Paystack subscription code or Flutterwave id.
+  externalId      String
+  pricePaidKobo   Int?
+  lastEventAt     DateTime          @default(now())
+  reminderSentFor DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([source, externalId, examCode])
+  @@index([userId])
+  @@index([status, expiresAt])
+}
+
+/// Every store notification and payment webhook, stored once. Never contains card data.
+model PaymentEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+  source          PurchaseSource
+  externalEventId String
+  type            String
+  payload         Json
+  receivedAt      DateTime       @default(now())
+  processedAt     DateTime?
+  error           String?
+  entitlementId   String?        @db.Uuid
+
+  @@unique([source, externalEventId])
+}
+
+model PromoCode {
+  id             String    @id @default(uuid()) @db.Uuid
+  code           String    @unique
+  examCode       ExamCode?
+  percentOff     Int       @default(0)
+  /// When true the code grants a full year without payment (for partners and schools).
+  grantsPlan     Boolean   @default(false)
+  maxRedemptions Int
+  redeemed       Int       @default(0)
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+}
+
+model TutorUsage {
+  userId   String   @db.Uuid
+  day      DateTime @db.Date
+  messages Int      @default(0)
+  refusals Int      @default(0)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, day])
+}
+
+model DeviceToken {
+  token     String   @id
+  userId    String   @db.Uuid
+  platform  Platform
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}
+
+/// Runtime settings managed from the admin dashboard (minimum app version, free tier limits and so on).
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@ugo/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Types, exam catalogue seed data and pure business rules shared by the Ugo app, API and admin dashboard.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/*.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.3"
+  }
+}
